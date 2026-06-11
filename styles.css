@@ -143,26 +143,53 @@ button.pressed {
 
 .touch-controls {
   position: fixed;
-  left: 14px;
-  right: 14px;
-  bottom: 14px;
+  left: max(18px, env(safe-area-inset-left));
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
   display: none;
+  align-items: end;
   justify-content: space-between;
   pointer-events: none;
+  z-index: 5;
 }
 
-.touch-controls button {
+.control-group {
+  display: flex;
+  gap: 12px;
   pointer-events: auto;
 }
 
+.touch-controls button {
+  width: 82px;
+  height: 74px;
+  min-width: 82px;
+  min-height: 74px;
+  font-size: 20px;
+  touch-action: none;
+  opacity: 0.92;
+}
+
 .touch-controls .jump {
-  min-width: 116px;
+  width: 118px;
+  min-width: 118px;
+  background: #f8cd3d;
+}
+
+.touch-controls .directions button {
+  width: 98px;
+  min-width: 98px;
+  height: 86px;
+  min-height: 86px;
+  font-size: 58px;
+  line-height: 0.7;
+  background: #fff8de;
 }
 
 @media (max-width: 760px), (pointer: coarse) {
   .shell {
     align-content: start;
     padding-top: 8px;
+    padding-bottom: 126px;
   }
 
   .stage-wrap {
@@ -181,5 +208,65 @@ button.pressed {
 
   .touch-controls {
     display: flex;
+  }
+}
+
+@media (min-width: 761px) and (pointer: coarse) {
+  .shell {
+    padding-bottom: 148px;
+  }
+
+  .touch-controls button {
+    width: 104px;
+    height: 92px;
+    min-width: 104px;
+    min-height: 92px;
+    font-size: 24px;
+  }
+
+  .touch-controls .jump {
+    width: 148px;
+    min-width: 148px;
+  }
+
+  .touch-controls .directions button {
+    width: 126px;
+    min-width: 126px;
+    height: 108px;
+    min-height: 108px;
+    font-size: 74px;
+  }
+}
+
+@media (max-width: 520px) {
+  .touch-controls {
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+
+  .control-group {
+    gap: 8px;
+  }
+
+  .touch-controls button {
+    width: 68px;
+    height: 62px;
+    min-width: 68px;
+    min-height: 62px;
+    font-size: 16px;
+  }
+
+  .touch-controls .jump {
+    width: 88px;
+    min-width: 88px;
+  }
+
+  .touch-controls .directions button {
+    width: 78px;
+    min-width: 78px;
+    height: 70px;
+    min-height: 70px;
+    font-size: 48px;
   }
 }
