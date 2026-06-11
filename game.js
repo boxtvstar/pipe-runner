@@ -98,6 +98,7 @@ const level = {
   ],
   powerups: [],
   projectiles: [],
+  enemyShots: [],
   debris: [],
 };
 
@@ -119,18 +120,22 @@ function coin(x, y) {
 
 function enemy(x, y, min, max, type = "goomba") {
   const flying = type === "flyer";
+  const boss = type === "boss";
   return {
     x,
     startX: x,
     y,
     baseY: y,
-    w: type === "turtle" ? 44 : 38,
-    h: flying ? 32 : 38,
-    startH: flying ? 32 : 38,
+    w: boss ? 92 : type === "turtle" ? 44 : 38,
+    h: boss ? 92 : flying ? 32 : 38,
+    startH: boss ? 92 : flying ? 32 : 38,
     min,
     max,
-    vx: type === "turtle" ? -0.95 : flying ? -1.45 : -1.15,
+    vx: boss ? -0.75 : type === "turtle" ? -0.95 : flying ? -1.45 : -1.15,
     alive: true,
+    hp: boss ? 8 : 1,
+    maxHp: boss ? 8 : 1,
+    fireCooldown: boss ? 80 : 0,
     squish: 0,
     type,
     shell: false,
@@ -208,6 +213,7 @@ const levelMaps = [
       enemy(3030, 372, 2940, 3220, "turtle"),
       enemy(3600, 302, 3480, 3720, "flyer"),
       enemy(4480, 372, 4390, 4710, "spike"),
+      enemy(4750, 400, 4550, 4860, "boss"),
     ],
   },
 ];
@@ -237,6 +243,7 @@ function loadLevel(index) {
   level.enemies = src.enemies.map((e) => ({ ...e, alive: true, shell: false, squish: 0 }));
   level.powerups = [];
   level.projectiles = [];
+  level.enemyShots = [];
   level.debris = [];
 }
 
@@ -276,6 +283,7 @@ function reset(full = true, loseLife = !full) {
   level.coins = level.coinMap.map((c) => ({ ...c, spin: Math.random() * 10, taken: false }));
   level.powerups = [];
   level.projectiles = [];
+  level.enemyShots = [];
   level.debris = [];
   level.bricks.forEach((b) => {
     b.broken = false;
@@ -287,6 +295,9 @@ function reset(full = true, loseLife = !full) {
   });
   level.enemies.forEach((e) => {
     e.alive = true;
+    e.hp = e.maxHp || 1;
+    e.fireCooldown = e.type === "boss" ? 80 : 0;
+    e.invuln = 0;
     e.squish = 0;
     e.shell = false;
     e.x = e.startX;
@@ -361,11 +372,12 @@ function update(dt) {
   updateCoins(dt);
   updatePowerups(dt);
   updateProjectiles(dt);
+  updateEnemyShots(dt);
   updateBoxes(dt);
   updateDebris(dt);
   updateEnemies(dt);
 
-  if (p.x >= level.goalX) win();
+  if (p.x >= level.goalX && !bossAlive()) win();
   state.camera = clamp(p.x - W * 0.36, 0, level.width - W);
   syncHud();
 }
@@ -554,14 +566,32 @@ function updateProjectiles(dt) {
     }
     for (const e of level.enemies) {
       if (!e.alive || shot.hit || !overlaps(shot, e)) continue;
-      e.alive = false;
-      e.squish = 14;
+      damageEnemy(e, 1);
       shot.hit = true;
       playSound("stomp");
-      state.score += e.type === "turtle" ? 350 : 250;
     }
   }
   level.projectiles = level.projectiles.filter((shot) => !shot.hit);
+}
+
+function updateEnemyShots(dt) {
+  const p = state.player;
+  for (const shot of level.enemyShots) {
+    if (shot.hit) continue;
+    shot.x += shot.vx * dt;
+    shot.y += shot.vy * dt;
+    shot.vy += 0.18 * dt;
+    shot.life -= dt;
+    if (shot.life <= 0 || shot.x < 0 || shot.x > level.width || shot.y > H + 80) shot.hit = true;
+    for (const s of getSolids()) {
+      if (overlaps(shot, s)) shot.hit = true;
+    }
+    if (!shot.hit && overlaps(p, shot)) {
+      shot.hit = true;
+      hurtPlayer(false);
+    }
+  }
+  level.enemyShots = level.enemyShots.filter((shot) => !shot.hit);
 }
 
 function updateBoxes(dt) {
@@ -586,6 +616,10 @@ function updateEnemies(dt) {
       e.squish -= dt;
       continue;
     }
+    if (e.invuln > 0) e.invuln -= dt;
+    if (e.type === "boss") {
+      updateBoss(e, dt);
+    }
     if (e.type === "flyer") e.y = e.baseY + Math.sin(state.time * 0.06 + e.phase) * 34;
     e.x += e.vx * dt;
     if (e.x < e.min || e.x + e.w > e.max) e.vx *= -1;
@@ -597,22 +631,69 @@ function updateEnemies(dt) {
         hurtPlayer(false);
         continue;
       }
+      if (e.type === "boss") {
+        damageEnemy(e, 2);
+        p.vy = -14;
+        continue;
+      }
       if (e.type === "turtle" && !e.shell) {
         e.shell = true;
         e.vx = 0;
         e.h = 26;
         e.y += 12;
       } else {
-        e.alive = false;
-        e.squish = 18;
+        damageEnemy(e, 1);
       }
       p.vy = -10;
       playSound("stomp");
-      state.score += e.type === "turtle" ? 350 : 250;
     } else {
       hurtPlayer(false);
     }
   }
+}
+
+function updateBoss(e, dt) {
+  if (e.x < e.min || e.x + e.w > e.max) e.vx *= -1;
+  e.y = e.baseY + Math.sin(state.time * 0.045 + e.phase) * 12;
+  e.fireCooldown -= dt;
+  if (e.fireCooldown <= 0) {
+    e.fireCooldown = 70 + Math.random() * 45;
+    const p = state.player;
+    const dir = p.x < e.x ? -1 : 1;
+    level.enemyShots.push({
+      x: e.x + (dir > 0 ? e.w - 10 : 4),
+      y: e.y + 38,
+      w: 24,
+      h: 18,
+      vx: dir * (4.5 + Math.random() * 1.5),
+      vy: -3.6 + Math.random() * 1.4,
+      life: 150,
+      hit: false,
+    });
+    playSound("bossfire");
+  }
+}
+
+function damageEnemy(e, amount) {
+  e.hp -= amount;
+  if (e.type === "boss") {
+    e.invuln = 10;
+    playSound("boss");
+    if (e.hp <= 0) {
+      e.alive = false;
+      e.squish = 40;
+      state.score += 3000;
+      playSound("win");
+    }
+    return;
+  }
+  e.alive = false;
+  e.squish = 18;
+  state.score += e.type === "turtle" ? 350 : 250;
+}
+
+function bossAlive() {
+  return level.enemies.some((e) => e.type === "boss" && e.alive);
 }
 
 function hurtPlayer(fell) {
@@ -686,6 +767,7 @@ function draw() {
   drawPowerups(cam);
   drawBoxes(cam);
   drawProjectiles(cam);
+  drawEnemyShots(cam);
   drawDebris(cam);
   drawEnemies(cam);
   drawPlayer(cam);
@@ -855,6 +937,19 @@ function drawProjectiles(cam) {
   }
 }
 
+function drawEnemyShots(cam) {
+  for (const shot of level.enemyShots) {
+    if (shot.x + shot.w < cam || shot.x > cam + W) continue;
+    const x = shot.x - cam;
+    ctx.fillStyle = "#f04b38";
+    ctx.fillRect(x, shot.y + 4, shot.w, shot.h - 4);
+    ctx.fillStyle = "#f8cd3d";
+    ctx.fillRect(x + 5, shot.y, shot.w - 8, shot.h - 6);
+    ctx.fillStyle = "#fff8de";
+    ctx.fillRect(x + 10, shot.y + 4, 5, 4);
+  }
+}
+
 function drawDebris(cam) {
   ctx.fillStyle = "#b55338";
   for (const d of level.debris) {
@@ -868,6 +963,10 @@ function drawEnemies(cam) {
     const h = e.alive ? e.h : 14;
     const x = e.x - cam;
     const y = e.y + (e.h - h);
+    if (e.type === "boss") {
+      drawBoss(e, x, y);
+      continue;
+    }
     if (e.type === "turtle") {
       ctx.fillStyle = e.shell ? "#2e8c55" : "#5aa957";
       ctx.fillRect(x + 4, y + 9, e.w - 8, h - 4);
@@ -913,15 +1012,59 @@ function drawEnemies(cam) {
   }
 }
 
+function drawBoss(e, x, y) {
+  const flash = e.invuln > 0 && Math.floor(state.time / 3) % 2 === 0;
+  ctx.fillStyle = "#152637";
+  ctx.fillRect(x + 8, y + 26, e.w - 12, e.h - 20);
+  ctx.fillStyle = flash ? "#fff8de" : "#24422f";
+  ctx.fillRect(x + 12, y + 30, e.w - 20, e.h - 28);
+  ctx.fillStyle = "#10291d";
+  ctx.fillRect(x + 24, y + 48, e.w - 42, 26);
+  ctx.fillStyle = "#152637";
+  ctx.fillRect(x + 16, y + 6, e.w - 22, 48);
+  ctx.fillStyle = flash ? "#fff8de" : "#7bcf5f";
+  ctx.fillRect(x + 20, y + 10, e.w - 30, 40);
+  ctx.fillStyle = "#f5d08b";
+  ctx.fillRect(x + 2, y + 44, 18, 18);
+  ctx.fillRect(x + e.w - 18, y + 44, 18, 18);
+  ctx.fillStyle = "#f04b38";
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(x + 24 + i * 14, y + 10);
+    ctx.lineTo(x + 31 + i * 14, y - 8);
+    ctx.lineTo(x + 38 + i * 14, y + 10);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#fff8de";
+  ctx.fillRect(x + 29, y + 24, 10, 10);
+  ctx.fillRect(x + 58, y + 24, 10, 10);
+  ctx.fillStyle = "#201713";
+  ctx.fillRect(x + 34, y + 27, 4, 4);
+  ctx.fillRect(x + 59, y + 27, 4, 4);
+  ctx.fillStyle = "#201713";
+  ctx.fillRect(x + 38, y + 40, 26, 5);
+
+  const barW = 118;
+  const hpRatio = clamp(e.hp / e.maxHp, 0, 1);
+  ctx.fillStyle = "#152637";
+  ctx.fillRect(x - 12, y - 30, barW, 14);
+  ctx.fillStyle = "#f04b38";
+  ctx.fillRect(x - 9, y - 27, (barW - 6) * hpRatio, 8);
+  ctx.fillStyle = "#fff8de";
+  ctx.font = "900 12px Trebuchet MS";
+  ctx.textAlign = "center";
+  ctx.fillText("BOSS", x + 47, y - 35);
+}
+
 function drawGoal(cam) {
   const x = level.goalX - cam + 34;
   ctx.fillStyle = "#1d3040";
   ctx.fillRect(x, 150, 8, 342);
-  ctx.fillStyle = "#fff8de";
+  ctx.fillStyle = bossAlive() ? "#b8b0a0" : "#fff8de";
   ctx.fillRect(x + 8, 166, 90, 46);
-  ctx.fillStyle = "#d94c38";
+  ctx.fillStyle = bossAlive() ? "#6b4b3d" : "#d94c38";
   ctx.font = "900 22px Trebuchet MS";
-  ctx.fillText("GOAL", x + 18, 197);
+  ctx.fillText(bossAlive() ? "BOSS" : "GOAL", x + 18, 197);
 }
 
 function drawPlayer(cam) {
@@ -1008,6 +1151,8 @@ function playSound(name) {
     coin: () => [playTone(820, 0, 0.07), playTone(1240, 0.06, 0.09)],
     power: () => [playTone(420, 0, 0.08), playTone(640, 0.07, 0.08), playTone(900, 0.14, 0.12)],
     shoot: () => playTone(260, 0, 0.08, "sawtooth", 0.04),
+    bossfire: () => [playTone(130, 0, 0.1, "sawtooth", 0.05), playTone(90, 0.07, 0.14, "sawtooth", 0.04)],
+    boss: () => [playTone(220, 0, 0.06, "triangle", 0.06), playTone(120, 0.06, 0.08, "triangle", 0.05)],
     stomp: () => [playTone(170, 0, 0.06), playTone(90, 0.04, 0.08)],
     bump: () => playTone(160, 0, 0.05, "triangle", 0.05),
     break: () => [playTone(110, 0, 0.07, "sawtooth", 0.05), playTone(70, 0.04, 0.12, "sawtooth", 0.04)],
