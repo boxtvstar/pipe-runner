@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pipe Runner</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%238ed6ff'/%3E%3Crect x='8' y='42' width='48' height='14' fill='%232e8c55'/%3E%3Crect x='21' y='21' width='22' height='25' fill='%23db3b2f'/%3E%3Crect x='18' y='16' width='28' height='8' fill='%232b65c9'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="stage-wrap" aria-label="Pipe Runner game">
+        <canvas id="game" width="960" height="540"></canvas>
+        <div class="hud" aria-hidden="true">
+          <div><span>Score</span><strong id="score">0</strong></div>
+          <div><span>Coins</span><strong id="coins">0</strong></div>
+          <div><span>Ammo</span><strong id="ammo">0</strong></div>
+          <div><span>Fly</span><strong id="fly">0</strong></div>
+          <div><span>Lives</span><strong id="lives">3</strong></div>
+          <div><span>World</span><strong id="world">1-1</strong></div>
+        </div>
+        <div id="message" class="message">
+          <h1>Pipe Runner</h1>
+          <p>← → 이동 · Space 2단 점프/비행 · F 총알 · R 다시 시작</p>
+          <button id="startBtn" type="button">Start</button>
+        </div>
+      </section>
+
+      <nav class="touch-controls" aria-label="mobile controls">
+        <button data-key="ArrowLeft" type="button" aria-label="left">‹</button>
+        <button data-key="ArrowRight" type="button" aria-label="right">›</button>
+        <button data-key="KeyF" type="button" aria-label="fire">Fire</button>
+        <button data-key="Space" class="jump" type="button" aria-label="jump">Jump</button>
+      </nav>
+    </main>
+
+    <script src="./game.js"></script>
+  </body>
+</html>
