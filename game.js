@@ -20,6 +20,7 @@ const MAX_FALL = 18;
 const keys = new Set();
 let jumpRequests = 0;
 let fireRequests = 0;
+let joystickPointer = null;
 let state;
 let lastTime = 0;
 let running = false;
@@ -855,6 +856,50 @@ function onKeyUp(e) {
 window.addEventListener("keydown", onKeyDown);
 window.addEventListener("keyup", onKeyUp);
 startBtn.addEventListener("click", start);
+
+const moveStick = document.getElementById("moveStick");
+const stickTrack = moveStick?.querySelector(".stick-track");
+
+function setJoystickDirection(clientX) {
+  if (!moveStick || !stickTrack) return;
+  const rect = stickTrack.getBoundingClientRect();
+  const center = rect.left + rect.width / 2;
+  const max = rect.width * 0.28;
+  const delta = clamp(clientX - center, -max, max);
+  const deadZone = rect.width * 0.12;
+  stickTrack.style.setProperty("--stick-x", `${delta}px`);
+  keys.delete("ArrowLeft");
+  keys.delete("ArrowRight");
+  if (delta < -deadZone) keys.add("ArrowLeft");
+  if (delta > deadZone) keys.add("ArrowRight");
+}
+
+function resetJoystick() {
+  if (!moveStick || !stickTrack) return;
+  joystickPointer = null;
+  moveStick.classList.remove("active");
+  stickTrack.style.setProperty("--stick-x", "0px");
+  keys.delete("ArrowLeft");
+  keys.delete("ArrowRight");
+}
+
+if (moveStick) {
+  moveStick.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    joystickPointer = e.pointerId;
+    moveStick.setPointerCapture(e.pointerId);
+    moveStick.classList.add("active");
+    setJoystickDirection(e.clientX);
+    if (!running) start();
+  });
+  moveStick.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== joystickPointer) return;
+    e.preventDefault();
+    setJoystickDirection(e.clientX);
+  });
+  moveStick.addEventListener("pointerup", resetJoystick);
+  moveStick.addEventListener("pointercancel", resetJoystick);
+}
 
 document.querySelectorAll("[data-key]").forEach((button) => {
   const code = button.dataset.key;

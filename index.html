@@ -27,13 +27,14 @@
       </section>
 
       <nav class="touch-controls" aria-label="mobile controls">
-        <div class="control-group actions">
-          <button data-key="KeyF" type="button" aria-label="fire">Fire</button>
-          <button data-key="Space" class="jump" type="button" aria-label="jump">Jump</button>
+        <div class="joystick" id="moveStick" aria-label="move left or right">
+          <div class="stick-track">
+            <div class="stick-knob"></div>
+          </div>
         </div>
-        <div class="control-group directions">
-          <button data-key="ArrowLeft" type="button" aria-label="left">‹</button>
-          <button data-key="ArrowRight" type="button" aria-label="right">›</button>
+        <div class="control-group actions">
+          <button data-key="KeyF" class="fire" type="button" aria-label="fire">Fire</button>
+          <button data-key="Space" class="jump" type="button" aria-label="jump">↑</button>
         </div>
       </nav>
     </main>
