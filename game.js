@@ -5,6 +5,7 @@ const scoreEl = document.getElementById("score");
 const coinsEl = document.getElementById("coins");
 const ammoEl = document.getElementById("ammo");
 const flyEl = document.getElementById("fly");
+const speedEl = document.getElementById("speed");
 const livesEl = document.getElementById("lives");
 const worldEl = document.getElementById("world");
 const messageEl = document.getElementById("message");
@@ -21,6 +22,8 @@ const keys = new Set();
 let jumpRequests = 0;
 let fireRequests = 0;
 let joystickPointer = null;
+let audioCtx = null;
+let currentLevel = 0;
 let state;
 let lastTime = 0;
 let running = false;
@@ -64,7 +67,7 @@ const level = {
     box(1040, 236, "mushroom"),
     box(1778, 190, "coin"),
     box(1970, 145, "ammo"),
-    box(2420, 300, "mushroom"),
+    box(2420, 300, "rainbow"),
     box(2800, 244, "wing"),
     box(3210, 300, "coin"),
     box(3780, 240, "mushroom"),
@@ -123,6 +126,7 @@ function enemy(x, y, min, max, type = "goomba") {
     baseY: y,
     w: type === "turtle" ? 44 : 38,
     h: flying ? 32 : 38,
+    startH: flying ? 32 : 38,
     min,
     max,
     vx: type === "turtle" ? -0.95 : flying ? -1.45 : -1.15,
@@ -134,7 +138,114 @@ function enemy(x, y, min, max, type = "goomba") {
   };
 }
 
-function reset(full = true) {
+const levelMaps = [
+  snapshotLevel(level),
+  {
+    width: 5200,
+    spawn: { x: 90, y: 250 },
+    goalX: 4980,
+    solids: [
+      rect(0, 492, 5200, 48),
+      rect(460, 410, 240, 32),
+      rect(850, 350, 240, 32),
+      rect(1270, 292, 192, 32),
+      rect(1640, 420, 288, 32),
+      rect(2140, 360, 240, 32),
+      rect(2510, 300, 192, 32),
+      rect(2920, 420, 336, 32),
+      rect(3470, 350, 240, 32),
+      rect(3880, 292, 240, 32),
+      rect(4380, 420, 336, 32),
+      rect(1780, 444, 96, 48),
+      rect(1880, 396, 96, 96),
+      rect(4090, 444, 96, 48),
+      rect(4190, 396, 96, 96),
+    ],
+    bricks: [
+      brick(620, 292),
+      brick(662, 292),
+      brick(704, 292),
+      brick(1510, 252),
+      brick(1552, 252),
+      brick(1594, 252),
+      brick(2760, 252),
+      brick(2802, 252),
+      brick(2844, 252),
+      brick(3720, 220),
+      brick(3762, 220),
+      brick(3804, 220),
+    ],
+    boxes: [
+      box(900, 228, "rainbow"),
+      box(1320, 170, "coin"),
+      box(2210, 240, "wing"),
+      box(2590, 180, "ammo"),
+      box(3040, 300, "mushroom"),
+      box(3540, 230, "coin"),
+      box(3920, 170, "rainbow"),
+      box(4540, 300, "wing"),
+    ],
+    coinMap: [
+      coin(340, 390),
+      coin(520, 350),
+      coin(910, 290),
+      coin(1360, 230),
+      coin(1690, 360),
+      coin(2220, 300),
+      coin(2600, 240),
+      coin(3030, 360),
+      coin(3180, 360),
+      coin(3560, 290),
+      coin(3940, 230),
+      coin(4440, 360),
+      coin(4660, 360),
+    ],
+    enemies: [
+      enemy(760, 444, 620, 820, "turtle"),
+      enemy(1160, 312, 980, 1240, "flyer"),
+      enemy(1740, 372, 1650, 1910, "spike"),
+      enemy(2320, 312, 2150, 2360, "goomba"),
+      enemy(3030, 372, 2940, 3220, "turtle"),
+      enemy(3600, 302, 3480, 3720, "flyer"),
+      enemy(4480, 372, 4390, 4710, "spike"),
+    ],
+  },
+];
+
+function snapshotLevel(src) {
+  return {
+    width: src.width,
+    spawn: { ...src.spawn },
+    goalX: src.goalX,
+    solids: src.solids.map((s) => ({ ...s })),
+    bricks: src.bricks.map((b) => ({ ...b, broken: false, bump: 0 })),
+    boxes: src.boxes.map((b) => ({ ...b, hit: false, bump: 0 })),
+    coinMap: src.coinMap.map((c) => ({ ...c, taken: false })),
+    enemies: src.enemies.map((e) => ({ ...e, alive: true, shell: false, squish: 0 })),
+  };
+}
+
+function loadLevel(index) {
+  const src = levelMaps[index];
+  level.width = src.width;
+  level.spawn = { ...src.spawn };
+  level.goalX = src.goalX;
+  level.solids = src.solids.map((s) => ({ ...s }));
+  level.bricks = src.bricks.map((b) => ({ ...b, broken: false, bump: 0 }));
+  level.boxes = src.boxes.map((b) => ({ ...b, hit: false, bump: 0 }));
+  level.coinMap = src.coinMap.map((c) => ({ ...c, taken: false }));
+  level.enemies = src.enemies.map((e) => ({ ...e, alive: true, shell: false, squish: 0 }));
+  level.powerups = [];
+  level.projectiles = [];
+  level.debris = [];
+}
+
+function reset(full = true, loseLife = !full) {
+  if (full) {
+    currentLevel = 0;
+    loadLevel(currentLevel);
+  }
+  const previous = state || { player: { ammo: 0 }, score: 0, coins: 0, lives: 3 };
   state = {
     player: {
       x: level.spawn.x,
@@ -148,14 +259,15 @@ function reset(full = true) {
       jumpsLeft: 2,
       big: false,
       invincible: 0,
-      ammo: full ? 0 : state.player.ammo,
+      ammo: full ? 0 : previous.player.ammo,
       fireCooldown: 0,
       flightTimer: 0,
+      speedTimer: 0,
     },
     camera: 0,
-    score: full ? 0 : state.score,
-    coins: full ? 0 : state.coins,
-    lives: full ? 3 : Math.max(0, state.lives - 1),
+    score: full ? 0 : previous.score,
+    coins: full ? 0 : previous.coins,
+    lives: full ? 3 : loseLife ? Math.max(0, previous.lives - 1) : previous.lives,
     won: false,
     over: false,
     time: 0,
@@ -179,6 +291,7 @@ function reset(full = true) {
     e.shell = false;
     e.x = e.startX;
     e.y = e.baseY;
+    e.h = e.startH;
     e.vx = -Math.abs(e.vx || 1.15);
   });
   syncHud();
@@ -186,6 +299,7 @@ function reset(full = true) {
 
 function start() {
   if (!state || state.over || state.won) reset(true);
+  resumeAudio();
   running = true;
   messageEl.classList.add("hidden");
   lastTime = performance.now();
@@ -206,11 +320,11 @@ function update(dt) {
   const p = state.player;
 
   if (keys.has("ArrowLeft") || keys.has("KeyA")) {
-    p.vx -= 0.65 * dt;
+    p.vx -= 0.65 * speedBoost() * dt;
     p.facing = -1;
   }
   if (keys.has("ArrowRight") || keys.has("KeyD")) {
-    p.vx += 0.65 * dt;
+    p.vx += 0.65 * speedBoost() * dt;
     p.facing = 1;
   }
   while (jumpRequests > 0) {
@@ -224,6 +338,7 @@ function update(dt) {
   }
 
   if (p.fireCooldown > 0) p.fireCooldown -= dt;
+  if (p.speedTimer > 0) p.speedTimer -= dt;
   if (p.flightTimer > 0) {
     p.flightTimer -= dt;
     if (keys.has("Space") || keys.has("ArrowUp") || keys.has("KeyW")) {
@@ -234,7 +349,7 @@ function update(dt) {
 
   if (p.onGround) p.jumpsLeft = 2;
 
-  p.vx = clamp(p.vx * FRICTION, -7.2, 7.2);
+  p.vx = clamp(p.vx * FRICTION, -7.2 * speedBoost(), 7.2 * speedBoost());
   p.vy = clamp(p.vy + GRAVITY * dt, -22, MAX_FALL);
 
   move(p, p.vx * dt, 0);
@@ -295,8 +410,10 @@ function getSolids() {
 
 function hitBrick(b) {
   b.bump = 10;
+  playSound("bump");
   if (!state.player.big) return;
   b.broken = true;
+  playSound("break");
   state.score += 50;
   for (let i = 0; i < 8; i++) {
     level.debris.push({
@@ -314,10 +431,12 @@ function hitBrick(b) {
 function hitBox(b) {
   b.hit = true;
   b.bump = 12;
+  playSound("bump");
   if (b.item === "coin") addCoin(b.x + b.w / 2, b.y - 18);
   if (b.item === "mushroom") addPowerup(b.x + 6, b.y - 28, "mushroom");
   if (b.item === "ammo") addPowerup(b.x + 6, b.y - 28, "ammo");
   if (b.item === "wing") addPowerup(b.x + 6, b.y - 28, "wing");
+  if (b.item === "rainbow") addPowerup(b.x + 6, b.y - 28, "rainbow");
 }
 
 function addCoin(x, y) {
@@ -343,6 +462,7 @@ function updateCoins(dt) {
 function collect(c) {
   if (c.taken) return;
   c.taken = true;
+  playSound("coin");
   state.coins += 1;
   state.score += 100;
   if (state.coins > 0 && state.coins % 20 === 0) state.lives += 1;
@@ -352,9 +472,9 @@ function addPowerup(x, y, type) {
   level.powerups.push({
     x,
     y,
-    w: type === "wing" ? 38 : type === "mushroom" ? 34 : 30,
-    h: type === "wing" ? 30 : type === "mushroom" ? 34 : 26,
-    vx: type === "mushroom" ? 1.15 : 0,
+    w: type === "wing" ? 38 : type === "mushroom" || type === "rainbow" ? 34 : 30,
+    h: type === "wing" ? 30 : type === "mushroom" || type === "rainbow" ? 34 : 26,
+    vx: type === "mushroom" || type === "rainbow" ? 1.15 : 0,
     vy: -4,
     type,
     taken: false,
@@ -386,6 +506,7 @@ function updatePowerups(dt) {
 
 function collectPowerup(item) {
   item.taken = true;
+  playSound("power");
   if (item.type === "mushroom") {
     state.player.big = true;
     state.player.h = 58;
@@ -396,8 +517,12 @@ function collectPowerup(item) {
     state.score += 300;
   }
   if (item.type === "wing") {
-    state.player.flightTimer = 300;
+    state.player.flightTimer = 600;
     state.score += 500;
+  }
+  if (item.type === "rainbow") {
+    state.player.speedTimer = 480;
+    state.score += 700;
   }
 }
 
@@ -406,6 +531,7 @@ function shoot() {
   if (!running || p.ammo <= 0 || p.fireCooldown > 0) return;
   p.ammo -= 1;
   p.fireCooldown = 16;
+  playSound("shoot");
   level.projectiles.push({
     x: p.x + (p.facing > 0 ? p.w - 2 : -10),
     y: p.y + 18,
@@ -423,7 +549,7 @@ function updateProjectiles(dt) {
     shot.x += shot.vx * dt;
     shot.life -= dt;
     if (shot.life <= 0 || shot.x < 0 || shot.x > level.width) shot.hit = true;
-    for (const s of level.solids.concat(level.boxes)) {
+    for (const s of getSolids()) {
       if (overlaps(shot, s)) shot.hit = true;
     }
     for (const e of level.enemies) {
@@ -431,6 +557,7 @@ function updateProjectiles(dt) {
       e.alive = false;
       e.squish = 14;
       shot.hit = true;
+      playSound("stomp");
       state.score += e.type === "turtle" ? 350 : 250;
     }
   }
@@ -480,6 +607,7 @@ function updateEnemies(dt) {
         e.squish = 18;
       }
       p.vy = -10;
+      playSound("stomp");
       state.score += e.type === "turtle" ? 350 : 250;
     } else {
       hurtPlayer(false);
@@ -490,11 +618,13 @@ function updateEnemies(dt) {
 function hurtPlayer(fell) {
   const p = state.player;
   if (!fell && p.invincible > 0) return;
+  playSound("hurt");
   if (p.big && !fell) {
     p.big = false;
     p.h = 46;
     p.invincible = 90;
     p.flightTimer = 0;
+    p.speedTimer = 0;
     return;
   }
 
@@ -508,9 +638,17 @@ function hurtPlayer(fell) {
 }
 
 function win() {
-  state.won = true;
   running = false;
-  showMessage("Clear!", "멋지게 도착했습니다 · R 다시 시작", "Again");
+  playSound("win");
+  if (currentLevel < levelMaps.length - 1) {
+    currentLevel += 1;
+    loadLevel(currentLevel);
+    reset(false, false);
+    showMessage(`World 1-${currentLevel} Clear!`, "다음 판으로 갑니다 · Start", "Next");
+    return;
+  }
+  state.won = true;
+  showMessage("All Clear!", "모든 판을 깼습니다 · R 다시 시작", "Again");
 }
 
 function gameOver() {
@@ -532,8 +670,9 @@ function syncHud() {
   coinsEl.textContent = state.coins;
   ammoEl.textContent = state.player.ammo;
   flyEl.textContent = Math.max(0, Math.ceil(state.player.flightTimer / 60));
+  speedEl.textContent = speedBoost() > 1 ? "2x" : "1x";
   livesEl.textContent = state.lives;
-  worldEl.textContent = "1-1";
+  worldEl.textContent = `1-${currentLevel + 1}`;
 }
 
 function draw() {
@@ -666,9 +805,17 @@ function drawPowerups(cam) {
   for (const item of level.powerups) {
     if (item.taken || item.x + item.w < cam || item.x > cam + W) continue;
     const x = item.x - cam;
-    if (item.type === "mushroom") {
-      ctx.fillStyle = "#e84635";
-      ctx.fillRect(x, item.y + 4, item.w, 17);
+    if (item.type === "mushroom" || item.type === "rainbow") {
+      if (item.type === "rainbow") {
+        const colors = ["#f04b38", "#f5b82e", "#f8e34f", "#35b86b", "#4a90e2", "#9b5de5"];
+        for (let i = 0; i < colors.length; i++) {
+          ctx.fillStyle = colors[i];
+          ctx.fillRect(x + i * (item.w / colors.length), item.y + 4, item.w / colors.length + 1, 17);
+        }
+      } else {
+        ctx.fillStyle = "#e84635";
+        ctx.fillRect(x, item.y + 4, item.w, 17);
+      }
       ctx.fillStyle = "#fff2cf";
       ctx.fillRect(x + 5, item.y + 14, item.w - 10, 20);
       ctx.fillStyle = "#fff2cf";
@@ -785,6 +932,14 @@ function drawPlayer(cam) {
   const cap = p.big ? "#db3b2f" : "#2b65c9";
   const suit = p.big ? "#2b65c9" : "#db3b2f";
 
+  if (p.speedTimer > 0) {
+    const colors = ["#f04b38", "#f8cd3d", "#35b86b", "#4a90e2"];
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = colors[i];
+      ctx.fillRect(x - 10 - i * 9, y + 14 + Math.sin(state.time * 0.2 + i) * 8, 6, 6);
+    }
+  }
+
   if (p.flightTimer > 0) {
     const flap = Math.sin(state.time * 0.35) * 4;
     ctx.fillStyle = "#fff8de";
@@ -822,6 +977,46 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+function speedBoost() {
+  return state?.player?.speedTimer > 0 ? 2 : 1;
+}
+
+function resumeAudio() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return;
+  if (!audioCtx) audioCtx = new AudioContext();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+}
+
+function playTone(freq, start, duration, type = "square", volume = 0.06) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime + start);
+  gain.gain.setValueAtTime(volume, audioCtx.currentTime + start);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + start + duration);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(audioCtx.currentTime + start);
+  osc.stop(audioCtx.currentTime + start + duration);
+}
+
+function playSound(name) {
+  if (!audioCtx) return;
+  const sounds = {
+    jump: () => [playTone(360, 0, 0.08), playTone(520, 0.05, 0.08)],
+    coin: () => [playTone(820, 0, 0.07), playTone(1240, 0.06, 0.09)],
+    power: () => [playTone(420, 0, 0.08), playTone(640, 0.07, 0.08), playTone(900, 0.14, 0.12)],
+    shoot: () => playTone(260, 0, 0.08, "sawtooth", 0.04),
+    stomp: () => [playTone(170, 0, 0.06), playTone(90, 0.04, 0.08)],
+    bump: () => playTone(160, 0, 0.05, "triangle", 0.05),
+    break: () => [playTone(110, 0, 0.07, "sawtooth", 0.05), playTone(70, 0.04, 0.12, "sawtooth", 0.04)],
+    hurt: () => [playTone(260, 0, 0.1), playTone(150, 0.08, 0.16)],
+    win: () => [playTone(520, 0, 0.1), playTone(660, 0.1, 0.1), playTone(840, 0.2, 0.18)],
+  };
+  sounds[name]?.();
+}
+
 function tryJump() {
   const p = state.player;
   if (!running) return;
@@ -834,10 +1029,12 @@ function tryJump() {
   }
   p.vy = p.jumpsLeft === 0 ? -14.2 : -16.2;
   p.onGround = false;
+  playSound("jump");
 }
 
 function onKeyDown(e) {
   if (["ArrowLeft", "ArrowRight", "ArrowUp", "Space"].includes(e.code)) e.preventDefault();
+  resumeAudio();
   if (!keys.has(e.code)) {
     if (["Space", "ArrowUp", "KeyW"].includes(e.code)) jumpRequests += 1;
     if (e.code === "KeyF") fireRequests += 1;
