@@ -774,6 +774,11 @@ function draw() {
 }
 
 function drawSky(cam) {
+  if (isBossRoom(cam)) {
+    drawBossRoom(cam);
+    return;
+  }
+
   const grd = ctx.createLinearGradient(0, 0, 0, H);
   grd.addColorStop(0, "#63c6ff");
   grd.addColorStop(0.62, "#a8e5ff");
@@ -792,6 +797,67 @@ function drawSky(cam) {
   for (let i = 0; i < 12; i++) {
     const x = ((i * 310 - cam * 0.42) % 1600) - 220;
     hill(x, 492, 120 + (i % 4) * 24);
+  }
+}
+
+function isBossRoom(cam) {
+  return currentLevel === levelMaps.length - 1 && cam > level.goalX - W * 1.12;
+}
+
+function drawBossRoom(cam) {
+  const grd = ctx.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, "#1a1724");
+  grd.addColorStop(0.58, "#2c2230");
+  grd.addColorStop(0.59, "#5c2b24");
+  grd.addColorStop(1, "#d65a28");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = "#261f2c";
+  for (let x = -((cam * 0.35) % 112); x < W + 112; x += 112) {
+    ctx.fillRect(x, 76, 76, 290);
+    ctx.fillStyle = "#17131d";
+    ctx.fillRect(x + 10, 94, 56, 248);
+    ctx.fillStyle = "#3b3142";
+    ctx.fillRect(x + 14, 104, 48, 22);
+    ctx.fillStyle = "#261f2c";
+  }
+
+  ctx.fillStyle = "#f5b82e";
+  for (let x = -((cam * 0.18) % 260); x < W + 260; x += 260) {
+    ctx.fillRect(x + 70, 118, 48, 92);
+    ctx.beginPath();
+    ctx.arc(x + 94, 118, 24, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = "#ef6f2e";
+    ctx.fillRect(x + 82, 136, 24, 74);
+    ctx.fillStyle = "#f5b82e";
+  }
+
+  ctx.fillStyle = "#15121a";
+  for (let y = 88; y < 382; y += 34) {
+    for (let x = -((cam * 0.12 + y) % 72); x < W + 72; x += 72) {
+      ctx.fillRect(x, y, 54, 5);
+    }
+  }
+
+  ctx.fillStyle = "#7e342b";
+  ctx.fillRect(0, 408, W, 84);
+  ctx.fillStyle = "#ff8a2b";
+  for (let i = 0; i < 18; i++) {
+    const x = ((i * 78 - state.time * 1.8) % (W + 120)) - 60;
+    const y = 432 + Math.sin(state.time * 0.08 + i) * 10;
+    ctx.fillRect(x, y, 48, 8);
+  }
+
+  ctx.fillStyle = "#1a1620";
+  ctx.fillRect(0, 0, W, 52);
+  ctx.fillStyle = "#3b3142";
+  for (let x = -((cam * 0.5) % 64); x < W + 64; x += 64) {
+    ctx.fillRect(x, 0, 48, 52);
+    ctx.fillStyle = "#14111a";
+    ctx.fillRect(x + 14, 0, 20, 52);
+    ctx.fillStyle = "#3b3142";
   }
 }
 
